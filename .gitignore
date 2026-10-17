@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# bash build artifacts.  None of these are part of a pristine bash tarball;
+# they are produced by ./configure + make.  Keeping them out means a checkout
+# is exactly "upstream source + the Android port changes".
+# ---------------------------------------------------------------------------
+*.o
+*.a
+*.so
+*.so.*
+*.lo
+*.la
+*.deps
+.libs/
+*.gmo
+*.mo
+y.tab.c
+y.tab.h
+config.h
+config.log
+config.status
+config.cache
+pathnames.h
+buildconf.h
+Makefile
+stamp-h
+stamp-h.in
+bash
+bashbug
+bashversion
+buildversion
+mkbuiltins
+mksignatures
+mksyntax
+gen-helpfiles
+pcomplib
+recho
+zecho
+printenv
+xcase
+autom4te.cache/
+builtins/builtext.h
+examples/loadables/*.so
+
+# ---------------------------------------------------------------------------
+# scratch
+# ---------------------------------------------------------------------------
+tmp/
+*.log
+*.bak-epoch
+
+# editor/autoconf backup files
+*~
+*.orig
+*.rej

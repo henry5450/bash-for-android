@@ -1,0 +1,191 @@
+[
+ {
+  "idx": 0,
+  "prog": "#include <stdio.h>\ntypedef int (*_bashfunc)(const char *, ...);\n#include <stdlib.h>\nint\nmain()\n{\n_bashfunc pf;\npf = (_bashfunc) printf;\nexit(pf == 0);\n}",
+  "yes": "bash_cv_printf_declared=yes",
+  "no": "bash_cv_printf_declared=no",
+  "dflt": "AC_MSG_WARN(cannot check printf declaration if cross compiling -- defaulting to yes)\n    bash_cv_printf_declared=yes"
+ },
+ {
+  "idx": 1,
+  "prog": "#include <sys/types.h>\n#include <signal.h>\n#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <stdlib.h>\n#ifndef UNDER_SYS_SIGLIST_DECLARED\nextern char *_sys_siglist[];\n#endif\nint\nmain()\n{\nchar *msg = (char *)_sys_siglist[2];\nexit(msg == 0);\n}",
+  "yes": "bash_cv_under_sys_siglist=yes",
+  "no": "bash_cv_under_sys_siglist=no",
+  "dflt": "AC_MSG_WARN(cannot check for _sys_siglist[] if cross compiling -- defaulting to no)\n\t bash_cv_under_sys_siglist=no"
+ },
+ {
+  "idx": 2,
+  "prog": "#include <sys/types.h>\n#include <signal.h>\n#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <stdlib.h>\n#if !HAVE_DECL_SYS_SIGLIST\nextern char *sys_siglist[];\n#endif\nint\nmain()\n{\nchar *msg = sys_siglist[2];\nexit(msg == 0);\n}",
+  "yes": "bash_cv_sys_siglist=yes",
+  "no": "bash_cv_sys_siglist=no",
+  "dflt": "AC_MSG_WARN(cannot check for sys_siglist if cross compiling -- defaulting to no)\n\t bash_cv_sys_siglist=no"
+ },
+ {
+  "idx": 3,
+  "prog": "#include <sys/types.h>\n#include <fcntl.h>\n#include <stdlib.h>\n#ifdef HAVE_UNISTD_H\n# include <unistd.h>\n#endif /* HAVE_UNISTD_H */\nint\nmain()\n{\n  int fd1, fd2, fl;\n  fd1 = open(\"/dev/null\", 2);\n  if (fcntl(fd1, 2, 1) < 0)\n    exit(1);\n  fd2 = dup2(fd1, 1);\n  if (fd2 < 0)\n    exit(2);\n  fl = fcntl(fd2, 1, 0);\n  /* fl will be 1 if dup2 did not reset the close-on-exec flag. */\n  exit(fl != 1);\n}",
+  "yes": "bash_cv_dup2_broken=yes",
+  "no": "bash_cv_dup2_broken=no",
+  "dflt": "AC_MSG_WARN(cannot check dup2 if cross compiling -- defaulting to no)\n     bash_cv_dup2_broken=no"
+ },
+ {
+  "idx": 4,
+  "prog": "#include <stdio.h>\n#include <sys/types.h>\n#include <fcntl.h>\n#ifdef HAVE_UNISTD_H\n# include <unistd.h>\n#endif /* HAVE_UNISTD_H */\n#ifdef HAVE_SYS_STAT_H\n#include <sys/stat.h>\n#endif\n#if defined(HAVE_DIRENT_H)\n# include <dirent.h>\n#else\n# define dirent direct\n# ifdef HAVE_SYS_NDIR_H\n#  include <sys/ndir.h>\n# endif /* SYSNDIR */\n# ifdef HAVE_SYS_DIR_H\n#  include <sys/dir.h>\n# endif /* SYSDIR */\n# ifdef HAVE_NDIR_H\n#  include <ndir.h>\n# endif\n#endif /* HAVE_DIRENT_H */\n#include <stdlib.h>\nint\nmain()\n{\nDIR *dir;\nint fd, err;\nerr = mkdir(\"bash-aclocal\", 0700);\nif (err < 0) {\n  perror(\"mkdir\");\n  exit(1);\n}\nunlink(\"bash-aclocal/not_a_directory\");\nfd = open(\"bash-aclocal/not_a_directory\", O_WRONLY|O_CREAT|O_EXCL, 0666);\nwrite(fd, \"\\n\", 1);\nclose(fd);\ndir = opendir(\"bash-aclocal/not_a_directory\");\nunlink(\"bash-aclocal/not_a_directory\");\nrmdir(\"bash-aclocal\");\nexit (dir == 0);\n}",
+  "yes": "bash_cv_opendir_not_robust=yes",
+  "no": "bash_cv_opendir_not_robust=no",
+  "dflt": "AC_MSG_WARN(cannot check opendir if cross compiling -- defaulting to no)\n     bash_cv_opendir_not_robust=no"
+ },
+ {
+  "idx": 5,
+  "prog": "#ifdef HAVE_SYS_TIME_H\n#include <sys/time.h>\n#endif\n#include <stdlib.h>\n#include <sys/resource.h>\nint\nmain()\n{\nstruct rlimit r;\nexit(sizeof (r.rlim_cur));\n}",
+  "yes": "bash_cv_sizeof_rlim_cur=$?",
+  "no": "bash_cv_sizeof_rlim_cur=$?",
+  "dflt": "AC_MSG_WARN(cannot check size of rlimit fields if cross compiling -- defaulting to long)\n\t bash_cv_sizeof_rlim_cur=$ac_cv_sizeof_long"
+ },
+ {
+  "idx": 6,
+  "prog": "#include <sys/types.h>\n#include <stdlib.h>\n#if HAVE_INTTYPES_H\n#include <inttypes.h>\n#endif\n#if HAVE_STDINT_H\n#include <stdint.h>\n#endif\n\nint\nmain()\n{\n#if HAVE_QUAD_T\nquad_t x;\nexit(sizeof (x));\n#else\nexit (0);\n#endif\n}",
+  "yes": "bash_cv_sizeof_quad_t=$?",
+  "no": "bash_cv_sizeof_quad_t=$?",
+  "dflt": "AC_MSG_WARN(cannot check size of quad_t if cross compiling -- defaulting to 0)\n\t bash_cv_sizeof_quad_t=0"
+ },
+ {
+  "idx": 7,
+  "prog": "#ifdef HAVE_UNISTD_H\n#  include <unistd.h>\n#endif\n#include <stdlib.h>\nchar *\ngetenv (const char *name)\n{\nreturn \"42\";\n}\nint\nmain()\n{\nchar *s;\n/* The next allows this program to run, but does not allow bash to link\n   when it redefines getenv.  I'm not really interested in figuring out\n   why not. */\n#if defined (NeXT)\nexit(1);\n#endif\ns = getenv(\"ABCDE\");\nexit(s == 0);\t/* force optimizer to leave getenv in */\n}",
+  "yes": "bash_cv_getenv_redef=yes",
+  "no": "bash_cv_getenv_redef=no",
+  "dflt": "AC_MSG_WARN(cannot check getenv redefinition if cross compiling -- defaulting to yes)\n    bash_cv_getenv_redef=yes"
+ },
+ {
+  "idx": 8,
+  "prog": "#include <stdlib.h>\n#ifdef HAVE_ULIMIT_H\n#include <ulimit.h>\n#endif\nint\nmain()\n{\nlong maxfds = ulimit(4, 0L);\nexit (maxfds == -1L);\n}",
+  "yes": "bash_cv_ulimit_maxfds=yes",
+  "no": "bash_cv_ulimit_maxfds=no",
+  "dflt": "AC_MSG_WARN(cannot check ulimit if cross compiling -- defaulting to no)\n    bash_cv_ulimit_maxfds=no"
+ },
+ {
+  "idx": 9,
+  "prog": "#include <stdio.h>\n#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <stdlib.h>\n\nint\nmain()\n{\n\tchar\t*xpwd;\n\txpwd = getcwd(0, 0);\n\texit (xpwd == 0);\n}",
+  "yes": "bash_cv_getcwd_malloc=yes",
+  "no": "bash_cv_getcwd_malloc=no",
+  "dflt": "AC_MSG_WARN(cannot check whether getcwd allocates memory when cross-compiling -- defaulting to no)\n    bash_cv_getcwd_malloc=no"
+ },
+ {
+  "idx": 10,
+  "prog": "#include <fnmatch.h>\n\nint\nmain()\n{\n#ifdef FNM_EXTMATCH\n  return (0);\n#else\n  return (1);\n#endif\n}",
+  "yes": "bash_cv_fnm_extmatch=yes",
+  "no": "bash_cv_fnm_extmatch=no",
+  "dflt": "AC_MSG_WARN(cannot check FNM_EXTMATCH if cross compiling -- defaulting to no)\n     bash_cv_fnm_extmatch=no"
+ },
+ {
+  "idx": 11,
+  "prog": "#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <sys/types.h>\n#include <signal.h>\n#include <setjmp.h>\n#include <stdlib.h>\n\nint\nmain()\n{\n#if !defined (_POSIX_VERSION) || !defined (HAVE_POSIX_SIGNALS)\nexit (1);\n#else\n\nint code;\nsigset_t set, oset, nset;\nsigjmp_buf xx;\n\n/* get the mask */\nsigemptyset(&set);\nsigemptyset(&oset);\n\nsigprocmask(SIG_BLOCK, (sigset_t *)NULL, &oset);\n/* paranoia -- make sure SIGINT is not blocked */\nsigdelset (&oset, SIGINT);\nsigprocmask (SIG_SETMASK, &oset, (sigset_t *)NULL);\n\n/* save it */\ncode = sigsetjmp(xx, 1);\nif (code)\n{\n  sigprocmask(SIG_BLOCK, (sigset_t *)NULL, &nset);\n  /* could compare nset to oset here, but we just look for SIGINT */\n  if (sigismember (&nset, SIGINT))\n    exit(1);\n  exit(0);\n}\n\n/* change it so that SIGINT is blocked */\nsigaddset(&set, SIGINT);\nsigprocmask(SIG_BLOCK, &set, (sigset_t *)NULL);\n\n/* and siglongjmp */\nsiglongjmp(xx, 10);\nexit(1);\n#endif\n}",
+  "yes": "bash_cv_func_sigsetjmp=present",
+  "no": "bash_cv_func_sigsetjmp=missing",
+  "dflt": "AC_MSG_WARN(cannot check for sigsetjmp/siglongjmp if cross-compiling -- defaulting to $bash_cv_posix_signals)\n     if test \"$bash_cv_posix_signals\" = \"yes\" ; then\n\tbash_cv_func_sigsetjmp=present\n     else\n\tbash_cv_func_sigsetjmp=missing\n     fi"
+ },
+ {
+  "idx": 12,
+  "prog": "#include <stdio.h>\n#if defined (HAVE_LOCALE_H)\n#include <locale.h>\n#endif\n#include <string.h>\n#include <stdlib.h>\n\nint\nmain(int c, char **v)\n{\n        int     r1, r2;\n        char    *deflocale, *defcoll;\n\n#ifdef HAVE_SETLOCALE\n        deflocale = setlocale(LC_ALL, \"\");\n\tdefcoll = setlocale(LC_COLLATE, \"\");\n#endif\n\n#ifdef HAVE_STRCOLL\n\t/* These two values are taken from tests/glob-test. */\n        r1 = strcoll(\"abd\", \"aXd\");\n#else\n\tr1 = 0;\n#endif\n        r2 = strcmp(\"abd\", \"aXd\");\n\n\t/* These two should both be greater than 0.  It is permissible for\n\t   a system to return different values, as long as the sign is the\n\t   same. */\n\n        /* Exit with 1 (failure) if these two values are both > 0, since\n\t   this tests whether strcoll(3) is broken with respect to strcmp(3)\n\t   in the default locale. */\n\texit (r1 > 0 && r2 > 0);\n}",
+  "yes": "bash_cv_func_strcoll_broken=yes",
+  "no": "bash_cv_func_strcoll_broken=no",
+  "dflt": "AC_MSG_WARN(cannot check strcoll if cross compiling -- defaulting to no)\n    bash_cv_func_strcoll_broken=no"
+ },
+ {
+  "idx": 13,
+  "prog": "#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n\nint\nmain()\n{\n\tdouble y = 0.0;\n\tchar abuf[1024];\n\n\tsprintf(abuf, \"%A\", y);\n\texit(strchr(abuf, 'P') == (char *)0);\n}",
+  "yes": "bash_cv_printf_a_format=yes",
+  "no": "bash_cv_printf_a_format=no",
+  "dflt": "AC_MSG_WARN(cannot check printf if cross compiling -- defaulting to no)\n    bash_cv_printf_a_format=no"
+ },
+ {
+  "idx": 14,
+  "prog": "#ifdef HAVE_UNISTD_H\n#  include <unistd.h>\n#endif\n#ifdef HAVE_SYS_WAIT_H\n#  include <sys/wait.h>\n#endif\n#include <stdlib.h>\nint\nmain()\n{\n# ifdef GETPGRP_VOID\n#  define getpgID()\tgetpgrp()\n# else\n#  define getpgID()\tgetpgrp(0)\n#  define setpgid(x,y)\tsetpgrp(x,y)\n# endif\n\tint pid1, pid2, fds[2];\n\tint status;\n\tchar ok;\n\n\tswitch (pid1 = fork()) {\n\t  case -1:\n\t    exit(1);\n\t  case 0:\n\t    setpgid(0, getpid());\n\t    exit(0);\n\t}\n\tsetpgid(pid1, pid1);\n\n\tsleep(2);\t/* let first child die */\n\n\tif (pipe(fds) < 0)\n\t  exit(2);\n\n\tswitch (pid2 = fork()) {\n\t  case -1:\n\t    exit(3);\n\t  case 0:\n\t    setpgid(0, pid1);\n\t    ok = getpgID() == pid1;\n\t    write(fds[1], &ok, 1);\n\t    exit(0);\n\t}\n\tsetpgid(pid2, pid1);\n\n\tclose(fds[1]);\n\tif (read(fds[0], &ok, 1) != 1)\n\t  exit(4);\n\twait(&status);\n\twait(&status);\n\texit(ok ? 0 : 5);\n}",
+  "yes": "bash_cv_pgrp_pipe=no",
+  "no": "bash_cv_pgrp_pipe=yes",
+  "dflt": "AC_MSG_WARN(cannot check pgrp synchronization if cross compiling -- defaulting to no)\n    bash_cv_pgrp_pipe=no"
+ },
+ {
+  "idx": 15,
+  "prog": "#include <signal.h>\n#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <stdlib.h>\n\ntypedef void sigfunc(int);\n\nvolatile int nsigint;\n\n#ifdef HAVE_POSIX_SIGNALS\nsigfunc *\nset_signal_handler(int sig, sigfunc *handler)\n{\n  struct sigaction act, oact;\n  act.sa_handler = handler;\n  act.sa_flags = 0;\n  sigemptyset (&act.sa_mask);\n  sigemptyset (&oact.sa_mask);\n  sigaction (sig, &act, &oact);\n  return (oact.sa_handler);\n}\n#else\n#define set_signal_handler(s, h) signal(s, h)\n#endif\n\nvoid\nsigint(int s)\n{\n  nsigint++;\n}\n\nint\nmain()\n{\n\tnsigint = 0;\n\tset_signal_handler(SIGINT, sigint);\n\tkill((int)getpid(), SIGINT);\n\tkill((int)getpid(), SIGINT);\n\texit(nsigint != 2);\n}",
+  "yes": "bash_cv_must_reinstall_sighandlers=no",
+  "no": "bash_cv_must_reinstall_sighandlers=yes",
+  "dflt": "AC_MSG_WARN(cannot check signal handling if cross compiling -- defaulting to no)\n    bash_cv_must_reinstall_sighandlers=no"
+ },
+ {
+  "idx": 16,
+  "prog": "#include <sys/types.h>\n#include <sys/stat.h>\n#ifdef HAVE_UNISTD_H\n#include <unistd.h>\n#endif\n#include <stdio.h>\n#include <stdlib.h>\n\n/* Add more tests in here as appropriate. */\nint\nmain()\n{\nint fd, err;\n\n#if defined (HAVE_MKFIFO)\nexit (0);\n#endif\n\n#if !defined (S_IFIFO) && (defined (_POSIX_VERSION) && !defined (S_ISFIFO))\nexit (1);\n#endif\n\n#if defined (NeXT)\nexit (1);\n#endif\nerr = mkdir(\"bash-aclocal\", 0700);\nif (err < 0) {\n  perror (\"mkdir\");\n  exit(1);\n}\nfd = mknod (\"bash-aclocal/sh-np-autoconf\", 0666 | S_IFIFO, 0);\nif (fd == -1) {\n  rmdir (\"bash-aclocal\");\n  exit (1);\n}\nclose(fd);\nunlink (\"bash-aclocal/sh-np-autoconf\");\nrmdir (\"bash-aclocal\");\nexit(0);\n}",
+  "yes": "bash_cv_sys_named_pipes=present",
+  "no": "bash_cv_sys_named_pipes=missing",
+  "dflt": "AC_MSG_WARN(cannot check for named pipes if cross-compiling -- defaulting to missing)\n     bash_cv_sys_named_pipes=missing"
+ },
+ {
+  "idx": 17,
+  "prog": "#include <sys/types.h>\n#include <signal.h>\n#include <stdlib.h>\n\n#ifndef NSIG\n#  define NSIG 64\n#endif\n\nint\nmain ()\n{\n  int n_sigs = 2 * NSIG;\n#ifdef SIGRTMIN\n  int rtmin = SIGRTMIN;\n#else\n  int rtmin = 0;\n#endif\n\n  exit(rtmin < n_sigs);\n}",
+  "yes": "bash_cv_unusable_rtsigs=yes",
+  "no": "bash_cv_unusable_rtsigs=no",
+  "dflt": "AC_MSG_WARN(cannot check real-time signals if cross compiling -- defaulting to yes)\n     bash_cv_unusable_rtsigs=yes"
+ },
+ {
+  "idx": 18,
+  "prog": "#include <unistd.h>\n#include <stdlib.h>\n#include <stdio.h>\n\n#include <locale.h>\n#include <wchar.h>\n\nint\nmain(int c, char **v)\n{\n        int     w;\n\n        setlocale(LC_ALL, \"en_US.UTF-8\");\n        w = wcwidth (0x0301);\n\tif (w != 0)\n\t  exit (0);\n\tw = wcwidth (0x200b);\n        exit (w == 0);  /* exit 0 if wcwidth broken */\n}",
+  "yes": "bash_cv_wcwidth_broken=yes",
+  "no": "bash_cv_wcwidth_broken=no",
+  "dflt": "bash_cv_wcwidth_broken=no"
+ },
+ {
+  "idx": 19,
+  "prog": "#include <stdio.h>\n#include <readline/readline.h>\n#include <stdlib.h>\n\nextern int rl_gnu_readline_p;\n\nint\nmain()\n{\n\tFILE *fp;\n\tfp = fopen(\"conftest.rlv\", \"w\");\n\tif (fp == 0)\n\t\texit(1);\n\tif (rl_gnu_readline_p != 1)\n\t\tfprintf(fp, \"0.0\\n\");\n\telse\n\t\tfprintf(fp, \"%s\\n\", rl_library_version ? rl_library_version : \"0.0\");\n\tfclose(fp);\n\texit(0);\n}",
+  "yes": "ac_cv_rl_version=`cat conftest.rlv`",
+  "no": "ac_cv_rl_version='0.0'",
+  "dflt": "ac_cv_rl_version='8.0'"
+ },
+ {
+  "idx": 20,
+  "prog": "#include <sys/types.h>\n#include <sys/wait.h>\n#include <unistd.h>\n#include <errno.h>\n#include <stdlib.h>\n\n#ifndef errno\nextern int errno;\n#endif\nint\nmain()\n{\n\tint\tx;\n\n\tx = waitpid(-1, (int *)0, WNOHANG|WCONTINUED);\n\tif (x == -1 && errno == EINVAL)\n\t\texit (1);\n\telse\n\t\texit (0);\n}",
+  "yes": "bash_cv_wcontinued_broken=no",
+  "no": "bash_cv_wcontinued_broken=yes",
+  "dflt": "AC_MSG_WARN(cannot check WCONTINUED if cross compiling -- defaulting to no)\n    bash_cv_wcontinued_broken=no"
+ },
+ {
+  "idx": 21,
+  "prog": "#include <stdio.h>\n#include <stdlib.h>\n\nint\nmain()\n{\n  int n;\n  n = snprintf (0, 0, \"%s\", \"0123456\");\n  exit(n != 7);\n}",
+  "yes": "bash_cv_func_snprintf=yes",
+  "no": "bash_cv_func_snprintf=no",
+  "dflt": "AC_MSG_WARN([cannot check standard snprintf if cross-compiling"
+ },
+ {
+  "idx": 22,
+  "prog": "#include <stdarg.h>\n#include <stdio.h>\n#include <stdlib.h>\n\nstatic int\nfoo(const char *fmt, ...)\n{\n  va_list args;\n  int n;\n\n  va_start(args, fmt);\n  n = vsnprintf(0, 0, fmt, args);\n  va_end (args);\n  return n;\n}\n\nint\nmain()\n{\n  int n;\n  n = foo(\"%s\", \"0123456\");\n  exit(n != 7);\n}",
+  "yes": "bash_cv_func_vsnprintf=yes",
+  "no": "bash_cv_func_vsnprintf=no",
+  "dflt": "AC_MSG_WARN([cannot check standard vsnprintf if cross-compiling"
+ },
+ {
+  "idx": 23,
+  "prog": "#include <stdlib.h>\n#include <unistd.h>\n\n#include <sys/wait.h>\n\nint\nmain(int c, char **v)\n{\n  pid_t pid, p;\n  int s, i, n;\n\n  s = 0;\n  pid = fork();\n  if (pid == 0)\n    exit (42);\n\n  /* wait for the process */\n  p = wait(&s);\n  if (p != pid)\n    exit (255);\n\n  /* crack s */\n  for (i = 0; i < (sizeof(s) * 8); i++)\n    {\n      n = (s >> i) & 0xff;\n      if (n == 42)\n\texit (i);\n    }\n\n  exit (254);\n}",
+  "yes": "bash_cv_wexitstatus_offset=0",
+  "no": "bash_cv_wexitstatus_offset=$?",
+  "dflt": "AC_MSG_WARN(cannot check WEXITSTATUS offset if cross compiling -- defaulting to 0)\n    bash_cv_wexitstatus_offset=0"
+ },
+ {
+  "idx": 24,
+  "prog": "#include <stdlib.h>\n#include <unistd.h>\n\nint\nmain(int c, char **v)\n{\n\tvoid *x;\n\n\tx = sbrk (4096);\n\texit ((x == (void *)-1) ? 1 : 0);\n}",
+  "yes": "bash_cv_func_sbrk=yes",
+  "no": "bash_cv_func_sbrk=no",
+  "dflt": "AC_MSG_WARN([cannot check working sbrk if cross-compiling"
+ },
+ {
+  "idx": 25,
+  "prog": "#include <stdlib.h>\n#include <unistd.h>\n\nint\nmain(int c, char **v)\n{\n\tvoid *x;\n\n\tx = brk (0);\n\texit ((x == (void *)-1) ? 1 : 0);\n}",
+  "yes": "bash_cv_func_brk=yes",
+  "no": "bash_cv_func_brk=no",
+  "dflt": "AC_MSG_WARN([cannot check working brk if cross-compiling"
+ },
+ {
+  "idx": 26,
+  "prog": "#include <stdlib.h>\n#include <unistd.h>\n#include <stdio.h>\n#include <fnmatch.h>\n#include <locale.h>\n\nchar *pattern = \"[[=a=]]\";\n\n/* char *string = \"\u00e4\"; */\nunsigned char string[4] = { '\\xc3', '\\xa4', '\\0' };\n\nint\nmain (int c, char **v)\n{\n  setlocale (LC_ALL, \"en_US.UTF-8\");\n  if (fnmatch (pattern, (const char *)string, 0) != FNM_NOMATCH)\n    exit (0);\n  exit (1);\n}",
+  "yes": "bash_cv_fnmatch_equiv_fallback=yes",
+  "no": "bash_cv_fnmatch_equiv_fallback=no",
+  "dflt": "AC_MSG_WARN(cannot check fnmatch if cross compiling -- defaulting to no)\n    bash_cv_fnmatch_equiv_fallback=no"
+ }
+]

@@ -1,0 +1,364 @@
+================================================================================
+bash 5.3 -> Android arm64 移植总结
+================================================================================
+日期      2026-10-11
+源码      /work/bash-5.3 （bash 5.3-release，autoconf 2.72 生成）
+目标设备  192.168.3.105，Android 16 / API 36 / arm64-v8a，KernelSU root
+          Termux 已安装，app uid = u0_a338 (10338)
+
+--------------------------------------------------------------------------------
+一、最终成果
+--------------------------------------------------------------------------------
+
+产物        /work/bash-5.3/bash
+大小        4,314,160 字节
+版本        GNU bash 5.3.0(6)-release
+架构        ELF64 AArch64，PIE (DYN)
+链接        动态；NEEDED 仅 libdl.so + libc.so（Android 系统自带）
+解释器      /system/bin/linker64
+最低 API    35（对应 Android 15）
+
+因为只依赖系统自带的 libc/libdl，它仍然是"一个文件即整包"，push 到设备即可用。
+
+部署位置（三处，需保持同步）：
+
+  /data/local/tmp/bash                     主副本（adb 用；SELinux 禁止从 Termux 执行）
+  /data/data/com.termux/files/home/bash    你在 Termux 里实际执行的副本（承重）
+  /data/local/tmp/home/.bashrc             配置文件（固定路径，与 $HOME 无关）
+
+重新构建：  ./cross-build/build-android.sh        （可选参数：API 级别，默认 35）
+
+
+--------------------------------------------------------------------------------
+二、路线选择：为什么用 NDK 而不是静态 glibc
+--------------------------------------------------------------------------------
+
+选 NDK + bionic + 动态链接。理由：
+
+1) 工具链现成：本机已有 /Application/android-ndk-r29，无需再装 glibc 交叉工具链。
+
+2) 静态 glibc 在 Android 上是"能跑但非官方支持"的路径，会踩 locale/NSS 的坑；
+   而 bionic 从 Android 6.0 (API 23) 起内建 C.UTF-8，wcwidth 也支持 CJK 宽度。
+
+3) 动态链接反而更好：Android 上 libc.so 永远存在，所以产物依然是单文件，
+   同时保留了 dlopen 能力（enable -f 加载 loadable builtins 仍可用）。
+   静态链接会白丢这个能力，没有任何好处。
+
+实测确认中文完全正常：
+  MB_CUR_MAX 默认就是 4；setlocale(LC_ALL,"en_US.UTF-8") -> "C.UTF-8"
+  wcwidth(0x4e2d) = 2（中）；readline 退格按整字删除（3 字节一次删掉）
+
+
+--------------------------------------------------------------------------------
+三、构建过程中解决的三个问题
+--------------------------------------------------------------------------------
+
+【问题 1】交叉编译时约 28 个"运行期探测项"会拿到错误默认值
+--------------------------------------------------------------------------------
+bash 的 configure 靠**运行**测试程序来判断行为。交叉编译跑不了，autoconf 只
+WARN 然后用保守默认值 —— 而这些默认值在 bionic 上是错的。
+
+做法：把 aclocal.m4 里所有 AC_RUN_IFELSE 块抽出来编成探针，推到真机跑出真值，
+写进 cross-build/android.cache（58 个 bash_cv_* 条目）。
+证据与脚本保留在 android/probe/。
+
+几个"凭直觉会猜错"的关键值（均为真机实测）：
+
+  bash_cv_getcwd_malloc=yes         bionic 的 getcwd(NULL,0) 真的会分配内存。
+                                    默认值 no 会让 bash 白编一份自己的 getcwd
+                                    并把 GETCWD_BROKEN 打开。
+  bash_cv_sys_siglist=yes           bionic 有 sys_siglist，只是声明为 const
+  bash_cv_under_sys_siglist=no      但没有 _sys_siglist
+  bash_cv_getenv_redef=no           覆盖 getenv 会让 bionic 内部断言失败（实测
+                                    SIGABRT）—— 取 no 既是 configure 的真实结果
+                                    也是安全选择
+  bash_cv_func_strchrnul_works=yes  这个宏用 AC_LANG_PROGRAM 写的，默认 no 会让
+                                    bash 白编一份 strchrnul
+  bash_cv_wcwidth_broken=no         直接决定中文编辑是否正确
+  bash_cv_wexitstatus_offset=8      影响 $? 的解码
+  bash_cv_sizeof_rlim_cur=8
+  bash_cv_fnmatch_equiv_fallback=no bionic 的 fnmatch 不支持 [=c=]
+  bash_cv_ulimit_maxfds=no          bionic 没有 ulimit()
+
+另有 7 项 autoconf 标准宏也是运行期测试，一并喂了值（ac_cv_c_bigendian=no 等）。
+
+【问题 2】bash 5.3 交叉编译的一个真实缺陷：host 构建工具编不过
+--------------------------------------------------------------------------------
+CROSS_COMPILING 下，host 端构建工具（mkbuiltins、mksignatures…）包含的是
+buildconf.h 而不是 config.h，而 buildconf.h 里**没有** HAVE_STDBOOL_H，
+于是 bashansi.h 走到 fallback：
+
+    #  undef bool
+    typedef unsigned char bool;
+
+本机 gcc 15.2 默认 -std=gnu23，bool 已是关键字 -> 硬报错。
+目标端不受影响（走 config.h，那里有 HAVE_STDBOOL_H；clang 21 默认仍是 C17）。
+
+解法：  make CFLAGS_FOR_BUILD="-g -DCROSS_COMPILING -std=gnu17"
+
+注意必须传给 make 而不是 configure —— configure.ac 用 AC_ARG_VAR 声明了它，
+只在环境变量里改再重跑会触发 autoconf 的
+"changes in the environment can compromise the build" 保护。
+
+【问题 3】一个既存的隐蔽 bug：bionic 的 faccessat 拒绝 AT_EACCESS
+--------------------------------------------------------------------------------
+bionic 的 <fcntl.h> **定义**了 AT_EACCESS，所以 configure 探测通过、走：
+
+    ret = faccessat (AT_FDCWD, path, mode, AT_EACCESS);
+
+但 bionic 的 faccessat **拒绝**这个 flag。实测：
+
+    faccessat(AT_EACCESS) -> -1 EINVAL
+    faccessat(flags=0)    ->  0 OK
+    access(2)             ->  0 OK
+
+后果：sh_eaccess() 永远返回 -1，于是这个 bash 里 **`[ -w ]` / `[ -r ]` /
+`[ -x ]` 全部失效**，file_iswdir() 也全 false。这个 bug 在最初那版构建里
+就存在，只是小 here-doc 走管道才一直没暴露。
+
+解法：lib/sh/eaccess.c 里加 !defined (__ANDROID__) 跳过该分支，回落到 access(2)。
+
+
+--------------------------------------------------------------------------------
+四、功能改造（改了 6 个文件）
+--------------------------------------------------------------------------------
+
+1) config-top.h
+   新增 DEFAULT_HOME_DIR "/data/local/tmp/home"
+        DEFAULT_TMP_DIR  "/data/local/tmp/home/tmp"
+   DEFAULT_BASHRC 由 "~/.bashrc" 改为固定路径 DEFAULT_HOME_DIR "/.bashrc"
+   SYS_PROFILE 指向同一文件（这样 `bash -l` 也能读到，而 -l 是跳过 .bashrc 的；
+   两条分支互斥，所以恰好各读一次，不会重复 source）
+   注：刻意**不**定义 SYS_BASHRC，否则非登录交互 shell 会第二次读同一个文件
+
+2) pathnames.h.in
+   SYS_PROFILE 加 #ifndef 守卫，让 config-top.h 能覆盖（单一来源）
+
+3) variables.c
+   set_home_var() 重写：
+       - 环境里有 HOME 就继承；未设置 / 空串 / "/" 才回落到 DEFAULT_HOME_DIR
+         （"/" 也当未设置：adb shell 导出的就是它，而只读根目录永远不是 home，
+          会导致 HISTFILE=/.bash_history 写不进去、历史静默全丢）
+       - 无条件导出
+   android_make_shell_dirs()：自动创建上述两个目录（0777，忽略 EEXIST）
+       + android_widen_dir()：mkdir() 受进程 umask 影响。这两个目录是跨 uid 共享的，
+         如果由 umask 022 的 Termux 侧先创建，会得到 0755，shell 侧就写不进去
+         （here-doc 会失败）。所以在属主身份运行时把权限重新放宽到 0777。
+         实测：手工建成 0755 后跑一次 bash -> 变成 drwxrwxrwx。
+   调用点去掉 login_shell == 1 门槛（原本只在 argv[0] == "-bash" 时才设 HOME，
+   而 Android 上 bash 通常是非登录 shell，等于永远不设）
+   新增：启动时 bind 并导出 TMPDIR=DEFAULT_TMP_DIR
+   set_shell_var() 重写：$SHELL 绑到 $BASH（get_bash_name() 算出的本进程绝对
+   路径）并导出。原逻辑取 passwd 的 pw_shell 且环境优先 —— 两条路都错：
+   Android 会合成一条 pw_shell=/bin/sh 的记录，而 adb/su 各自导出自己的 SHELL。
+   与 HOME 不同，这里**故意覆盖**继承值：$SHELL 指向别的 shell 就是那个 bug。
+   root 的 bash 读的是同一个 .bashrc（固定路径），所以 `su -c bash` 也会被修正。
+
+4) shell.c
+   get_current_user_info()：把失败分支的 "/" 兜底换成 DEFAULT_HOME_DIR，并在
+   if/else 之后统一把空值或 "/" 覆盖掉（Android 的 passwd 对多数 uid 都给 "/"）
+
+5) lib/sh/tmpfile.c
+   get_sys_tmpdir() 首位候选改为 DEFAULT_TMP_DIR，避免兜底到 "."（当前目录），
+   也避免依赖 /tmp 存在
+
+6) lib/sh/eaccess.c
+   !defined (__ANDROID__) 守卫（见【问题 3】）
+
+
+--------------------------------------------------------------------------------
+五、配置文件 /data/local/tmp/home/.bashrc
+--------------------------------------------------------------------------------
+
+结构分两段：
+
+第一段「环境变量」无条件执行（这样非交互的 `bash -c` 也有可用 PATH）：
+  - 补齐 Android 系统目录到 PATH（bash 编译内置的默认 PATH 是
+    /usr/local/bin:/usr/bin:/bin:... 且末尾带一个 "."，Android 上全不存在）
+  - Termux 的 bin 放最前（与你的 mkshrc 一致；**刻意不加存在性判断** ——
+    /data/data/com.termux 只有 root/Termux 自己进得去，以 shell 身份判断恒为假，
+    加了反而让 root 也拿不到）
+  - LANG / TERM 兜底（: "${LANG:=C.UTF-8}" 形式，不覆盖已有值）
+  - 刻意**不** export HOME（C 层已处理，这里再 export 会把"继承"那半边废掉）
+
+第二段「交互式专属」用 case "$-" in *i*) ;; *) return ;; esac 隔开：
+  - 历史设置（见第七节）
+  - PS1：沿用你 mkshrc 的配色，用户名改用 bash 的 \u 展开（原写法把 root/shell
+    两个名字写死，任何非 root 的 uid 都显示成 shell；实测 1000 -> system、
+    10338 -> u0_a338）；escape 序列补上 \[ \]（mksh 写法在 bash 里会让 readline
+    算错提示符宽度，长命令换行错位）；主机名保持写死 myron（Android 的 hostname
+    是 localhost，\h 没用）
+  - 别名：沿用 mkshrc 全部内容（ls/cp/rm/mkdir/zip、su -c 系列、Termux 工具系列）
+  - su 包装函数：KernelSU 的 su 默认用 /system/bin/sh（--help 里写死），且不读
+    $SHELL。这里包一层，没显式给 -s/--shell 就补上 -s "$BASH"；显式给的原样放行
+  - bash 补全 / command-not-found（后者本机不存在，处于惰性状态）
+  - 终端标题
+
+文件末尾附了一节「相关变量说明」，把 HISTCONTROL / HISTTIMEFORMAT / HISTFILE /
+HISTSIZE / HISTFILESIZE 的作用都写在里面，方便日后翻查。
+
+
+--------------------------------------------------------------------------------
+六、$SHELL 的来龙去脉（值得单独记一笔）
+--------------------------------------------------------------------------------
+
+两个来源，两边都是错的：
+
+  a) bash 自身：variables.c:set_shell_var() 从 passwd 取 pw_shell，且环境优先。
+     探针实测 Android 合成的记录：
+         getpwuid(2000) -> name=[shell] uid=2000 dir=[/] shell=[/bin/sh]
+     （/system/etc/passwd 里其实只有 5 条 system_* 记录，其余是 Android 内部补的）
+  b) 父进程：adb / su / login 各自导出 SHELL（/bin/sh 或 /system/bin/sh）
+
+修正后实测：
+  shell 身份 -> /data/local/tmp/bash
+  root 身份  -> /data/local/tmp/bash
+  Termux 里  -> /data/data/com.termux/files/home/bash
+  干净环境   -> 同上（不依赖继承）
+  子进程看到的也对
+
+顺带更正一个错误认知：/bin/sh 在 Android 11+ 是存在的（/bin 链到 /system/bin），
+所以原来的 SHELL=/bin/sh 不是坏路径，只是指向 mksh 而非 bash。
+
+
+--------------------------------------------------------------------------------
+七、历史记录：两次修复，都值得记住
+--------------------------------------------------------------------------------
+
+需求：无论在什么条件下都写 /data/local/tmp/home/.bash_history；
+      在 Termux 下跑时两份都写。
+
+【第一次】#17917... 是什么
+--------------------------------------------------------------------------------
+是 epoch 时间戳（1791704134 = 2026-10-11 15:35:34），由 HISTTIMEFORMAT 产生。
+
+机制在 variables.c:sv_histtimefmt —— 设置它会**同时**做两件事：
+    1. history_write_timestamps = 1   写历史时插入 `#<epoch>' 行
+    2. history_comment_char = '#'     读历史时才认得那些行
+读取侧判断靠 history_comment_char（histfile.c: HIST_TIMESTAMP_START），而它在
+没设该变量的进程里默认是 '\0'，只有历史文件恰好以 `#数字' 开头才会被自动补上。
+
+于是有个不对称：**只有开着 HISTTIMEFORMAT 的 bash 读得懂自己写的东西**；
+任何没开的 shell 都会把 `#1791704134' 当成一条普通命令。
+实测同一个文件：开着读到 70 条，关着读到 105 条（= 70 条命令 + 35 条垃圾）。
+
+已从 .bashrc 移除。原有的垃圾行也清理了（两个文件各 35 / 13 行），
+清理前留了 .bak-epoch 备份。
+
+【第二次】Termux 下一条历史都不留
+--------------------------------------------------------------------------------
+根因是我 trap 里的错误处理把权限问题放大成了"全丢"：
+
+  bashhist.c 的 maybe_append_history（history -a 的实现）里，只要文件**存在**
+  （不管可不可写）都会执行到：
+      result = append_history (...);
+      history_lines_in_file += history_lines_this_session;
+      history_lines_this_session = 0;      /* 无条件清零 */
+  即 append_history 失败它不管，计数照样清零。
+
+  而 shell.c:exit_shell() 的顺序是「先 run_exit_trap()，后
+  maybe_save_shell_history()」，后者开头判断 if (history_lines_this_session > 0)。
+
+  连锁反应：trap 里 history -a 失败 -> || return，副文件也没写；
+  bash 自己那次看到计数为 0 -> 什么都不写 -> 一条都不留。
+
+真正的阻塞点是主历史文件 0600 shell:shell，Termux 的 app uid 写不进去。
+真实 Termux 环境实测：
+    /data/local/tmp/home/.bashrc        读=y   （所以配置生效了）
+    /data/local/tmp/home/.bash_history  读=n 写=n
+    （目录本身 0777，所以在目录里新建文件是允许的）
+
+修复两处：
+  1) 历史文件权限自愈：不存在就自己建（umask 0 -> 0666），是属主就 chmod 0666
+  2) trap 把可写性判断挪到调用 history -a **之前**（调用之后就晚了，计数已清零）；
+     不可写就直接写 $HOME/.bash_history，绝不丢历史
+
+真实 Termux 环境验证：
+    主文件 75 -> 77 行，含标记；副文件 501 -> 503 行，含标记   （两份都写）
+  反向验证（主文件改回 0600）：标记落到副文件，历史不丢
+
+
+--------------------------------------------------------------------------------
+八、关键发现清单（做同类移植时容易踩的）
+--------------------------------------------------------------------------------
+
+* SELinux：**untrusted_app 不能执行 shell_data_file 里的文件**。
+  所以 /data/local/tmp/bash 在 Termux 里跑不起来（实测 Permission denied），
+  你在 Termux 里用的其实是 $HOME/bash 那个副本 —— 它是"承重"的，
+  以后重新编译后必须手动 cp 同步，否则两边行为不一致。
+
+* `untrusted_app` 能读 /data/local/tmp/home/.bashrc（该目录 0777、文件 0644），
+  所以固定路径的 .bashrc 在 Termux 下同样生效。
+
+* 跨 uid 共享的目录/文件要显式放开权限，不能只靠 mkdir 的 mode 参数：
+  mkdir() 会被进程 umask 削减（022 -> 0755），而 bash 建历史文件时又固定用 0600。
+  所以 variables.c 里对目录做了"属主就 chmod 0777"，.bashrc 里对历史文件做了
+  "属主就 chmod 0666"。不这么做的话，先创建的那一方会把另一方挡在外面。
+
+* here-document 在 bash 5.3 里默认走**进程内管道**，不落盘：
+      redir.c: HEREDOC_PIPESIZE 未定义时取 PIPESIZE=PIPE_BUF；
+      但管道路径里还有 F_GETPIPE_SZ 检查，用的是内核实际管道容量（默认 64KB）。
+  所以**只有超过约 64KB 的 here-doc** 才真正用到临时目录。
+  进程替换则走 /dev/fd（HAVE_DEV_FD），完全不碰临时目录。
+  bash 建临时文件后立刻 unlink（只留 fd），所以目录里看不到文件。
+
+* PGRP_PIPE 由 configure.ac 里 `case "$(uname -r)"` 决定 —— 用的是**构建主机**
+  的内核版本。在 Linux 上构建会正确给出 PGRP_PIPE=1（Android 也是 Linux），
+  但换到非 Linux 主机交叉编译就会静默出错。
+
+* HISTCONTROL=ignoreboth 会丢弃**连续重复**和**以空格开头**的命令
+  （实测 echo SAME 连发 3 次只留 1 条；` echo X` 完全不留）。
+  排查"历史变少"时优先怀疑它和 HISTSIZE/HISTFILESIZE。
+
+
+--------------------------------------------------------------------------------
+九、已知限制与代价
+--------------------------------------------------------------------------------
+
+1) /data/local/tmp/home/.bash_history 是 **0666**。
+   这是"两个不同 uid 写同一个文件"的必要条件（u0_a338 与 shell 既非同用户
+   也非同组）。该目录本来就是 0777，所以意味着能访问它的进程都能读改历史。
+   不接受的话，替代方案是历史只写各自 $HOME，放弃"始终写主文件"这条要求。
+
+2) 非交互场景不读 .bashrc：bash 原生行为，只有交互式 shell、以及 stdin 是
+   套接字时的 `bash -c`（ssh/rsh 启发式，isnetconn）才会读。所以
+   `echo | bash -c ...` 和 `bash 脚本.sh` 拿不到本配置里的 PATH 等设置。
+   要彻底覆盖得在 C 层改 DEFAULT_PATH_VALUE。
+
+3) .bashrc 里的 Termux 系别名无条件定义（不判断存在性）——因为别名由 su -c
+   以 root 执行，而判断发生在非 root 时。这是刻意的，别"优化"掉。
+
+4) 你之前提过的安全事项：Termux 的 usr/etc/bash.bashrc 里有明文
+   ANTHROPIC_AUTH_TOKEN，我在调试时 tail 该文件把它打进了对话记录。
+   建议去后台轮换。此处不再复述其值。
+
+
+--------------------------------------------------------------------------------
+十、文件清单
+--------------------------------------------------------------------------------
+
+修改的源码（6 个）
+  config-top.h
+  pathnames.h.in
+  variables.c
+  shell.c
+  lib/sh/tmpfile.c
+  lib/sh/eaccess.c
+
+新增
+  cross-build/build-android.sh      一键复现构建（含上面三个问题的处理）
+  cross-build/android.cache         交叉编译所需的探测结果（configure 会重写它，
+                                    我写的出处注释被它覆盖了，出处以 android/probe 为准）
+  android/probe/                        探针源码、清单、编译脚本、原始退出码（cache 的依据）
+  android/bashrc                        部署到设备的那份 .bashrc 的副本
+
+设备上
+  /data/local/tmp/bash
+  /data/data/com.termux/files/home/bash
+  /data/local/tmp/home/.bashrc
+  /data/local/tmp/home/tmp                  （0777，TMPDIR 指向这里）
+  /data/local/tmp/home/.bash_history        （0666）
+  /data/local/tmp/home/.bash_history.bak-epoch
+  /data/data/com.termux/files/home/.bash_history.bak-epoch
+
+================================================================================

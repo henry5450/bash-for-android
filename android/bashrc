@@ -1,0 +1,113 @@
+for _d in /system/bin /system/xbin /vendor/bin /product/bin; do
+    case ":$PATH:" in
+        *":$_d:"*) ;;
+        *) PATH="${PATH:+$PATH:}$_d" ;;
+    esac
+done
+unset _d
+
+export PATH="/system/bin:/data/data/com.termux/files/usr/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin:/product/bin:/system_ext/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/apex/com.android.virt/bin"
+
+: "${LANG:=C.UTF-8}"
+: "${TERM:=xterm-256color}"
+export LANG TERM
+
+case "$-" in
+    *i*) ;;
+    *) return ;;
+esac
+
+HISTCONTROL=ignoreboth
+HISTSIZE=5000
+HISTFILESIZE=10000
+shopt -s histappend
+shopt -s cmdhist lithist
+shopt -s checkwinsize
+HISTFILE=/data/local/tmp/home/.bash_history
+
+if [ ! -e "$HISTFILE" ]; then
+    ( umask 0; : >> "$HISTFILE" ) 2>/dev/null
+fi
+[ -O "$HISTFILE" ] && chmod 0666 "$HISTFILE" 2>/dev/null
+
+_bashrc_dup_history () {
+    local dup main n
+    dup="$HOME/.bash_history"
+    main="$HISTFILE"
+    [ -n "$HOME" ] && [ -d "$HOME" ] && [ -w "$HOME" ] || return
+    [ "$dup" = "$main" ] && return
+    if [ -w "$main" ]; then
+        n=$(wc -l < "$main" 2>/dev/null); n=${n:-0}
+        history -a "$main" && tail -n "+$((n + 1))" "$main" >> "$dup" 2>/dev/null
+    else
+        history -a "$dup"
+    fi
+}
+trap _bashrc_dup_history EXIT
+
+if [ "$(id -u)" = "0" ]; then
+    PS1='\[\e[1;31m\]\u@$(getprop ro.product.device)\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \$ '
+else
+    PS1='\[\e[1;32m\]\u@$(getprop ro.product.device)\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \$ '
+fi
+
+TERMUX_HOME=/data/data/com.termux/files/home
+TERMUX_BIN=/data/data/com.termux/files/usr/bin
+alias ls='ls -A --color=auto'
+alias ll='ls -l'
+alias la='ls -A'
+alias cp='cp -r'
+alias rm='rm -r'
+alias zip='zip -r'
+alias mkdir='mkdir -p'
+alias dmesg='su -c dmesg'
+alias top='su -c top'
+alias ksud='su -c ksud'
+alias sudo='su -c /system/bin/sudo'
+alias adb='su -c /system/bin/adb'
+alias fastboot="su -c $TERMUX_BIN/fastboot"
+alias ssh="su -c $TERMUX_BIN/ssh"
+alias nano="su -c $TERMUX_BIN/nano"
+alias lsblk="su -c $TERMUX_BIN/lsblk"
+alias wget="su -c $TERMUX_BIN/wget"
+alias vim="su -c $TERMUX_BIN/vim"
+alias gdisk="$TERMUX_BIN/gdisk"
+alias losetup="$TERMUX_BIN/losetup"
+alias mount-termux="$TERMUX_BIN/mount"
+
+su () {
+    local a c
+    for a in "$@"; do
+        case "$a" in
+            -s|--shell) command su "$@"; return ;;
+        esac
+    done
+
+    case "$1" in
+        -c|--command)
+            c="${2:-}"
+            shift 2
+            command su -s "$BASH" -c "$c" "$@"
+            ;;
+        *)
+            command su -s "$BASH" "$@"
+            ;;
+    esac
+}
+
+if [ -r /data/data/com.termux/files/usr/share/bash-completion/bash_completion ]; then
+    . /data/data/com.termux/files/usr/share/bash-completion/bash_completion
+fi
+
+if [ -x /data/data/com.termux/files/usr/libexec/command-not-found ]; then
+    command_not_found_handle () {
+        /data/data/com.termux/files/usr/libexec/command-not-found $1
+        
+    }
+fi
+
+case "$TERM" in
+    xterm*|rxvt*|screen*|tmux*)
+        PROMPT_COMMAND='printf "\033]0;%s@%s %s\007" "${USER:-$(id -un)}" "${HOSTNAME%%.*}"'
+        ;;
+esac
