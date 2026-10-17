@@ -52,3 +52,7 @@ tmp/
 *~
 *.orig
 *.rej
+
+# bash build stamps
+.build
+.made
